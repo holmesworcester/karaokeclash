@@ -12,6 +12,6 @@ sudo apt install pipewire-jack pipewire-bin python3-gi-cairo gir1.2-gtk-3.0 pyth
 
 Extract the archive and run `./karaoke-playground-4` in a graphical session. Open **Audio I/O** to assign the four capture inputs and stereo return. Open **Audience** for the projected lyrics and press **F11** for fullscreen.
 
-The included demo is available immediately. Set `KARAOKE_DATA` to the location of an existing performance library. Automated song preparation needs a signed-in Codex CLI and the local karaoke skill tools. Live character conversion additionally needs the local voice models and runtime.
+The app opens with an empty song library. Use **Add song** to prepare a recording you supply. Set `KARAOKE_IMPORTS` to the directory of an existing library of prepared imports. Automated song preparation needs a signed-in Codex CLI and the local karaoke skill tools. Live character conversion additionally needs the local voice models and runtime.
 
-Built from Karaoke Playground commit `f4e246b773bb0d6414bb82fb673c178de9cd486f`.
+Based on Karaoke Playground commit `f4e246b773bb0d6414bb82fb673c178de9cd486f`.
