@@ -23,10 +23,14 @@ class MidiVersions(unittest.TestCase):
             region = dict(id=name, track=name, bpm=120, start=0, end=2, loop=True)
             part = dict(source=[1], duration=2, arrangement="Bass", notes=[[0, 2000, low]])
             variants = dict(extra=[[0, 2000, high]], earlier=[[0, 2000, old]], label="Keys")
+            if name == "teaser":
+                region.update(carrierNotesMs=variants.pop("extra"), carrierNotesLabel="Backing vocals")
             region["backingScoreId"] = audio.load_arrangements(name, region, name, part, variants, False, "song")
             regions.append(region)
         self.assertEqual(audio.version_labels["album"],
                          dict(all="All parts", focus="Focused part", extra="Keys", earlier="Earlier extraction"))
+        self.assertEqual(audio.version_labels["teaser"],
+                         dict(all="All parts", focus="Instruments", extra="Backing vocals", earlier="Earlier extraction"))
         first, second = ClipClock(regions[0]), ClipClock(regions[1], .5)
         audio.prepare_track(np.zeros(4*48000, "i2"), None, first.region)
         audio.call("stage_clock", *audio.clock_args(first))
@@ -51,7 +55,8 @@ class MidiVersions(unittest.TestCase):
         hear([48, 66], [50, 58, 68])
         for version, present, absent in (("focus", [48], [58, 66]), ("extra", [66], [48, 58]),
                                           ("earlier", [58], [48, 66]), ("all", [50, 68], [48, 66]),
-                                          ("focus", [50], [48, 60, 68])):
+                                          ("focus", [50], [48, 60, 68]), ("extra", [68], [50, 60]),
+                                          ("earlier", [60], [50, 68])):
             audio.call("midi_version", 1, list(VERSIONS).index(version))
             hear(present, absent)
-        self.assertEqual(audio.call("clock"), 72000)
+        self.assertEqual(audio.call("clock"), 96000)

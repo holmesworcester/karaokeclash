@@ -161,7 +161,9 @@ class ImportBass(unittest.TestCase):
     def test_add_song_publishes_bass_and_native_wet_voice_plays_the_repeated_hook(self):
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp)
-            fixture(folder)
+            meta, _ = fixture(folder)
+            vocals = [[1000, 1300, 72], [2100, 2400, 76], [2540, 3100, 72]]
+            (folder / "analysis.json").write_text(json.dumps(dict(meta, backingVocalNotesMs=vocals)))
             imports = folder / "songs"
             target = publish(folder, folder / "backing.wav", imports, 4, sections=True)
             with patch("library.IMPORTS", imports):
@@ -170,6 +172,14 @@ class ImportBass(unittest.TestCase):
                 songs[f"{target.name}/{name}"] for name in ("full", "hook-1", "teaser", "section-1")
             )
             self.assertEqual(note_at(full["score"]["bassNotesMs"], 2300), [33])
+            self.assertEqual(full["carrierNotesMs"], vocals)
+            self.assertNotIn("carrierNotesMs", teaser)  # Its vocal gate closes before the response.
+            self.assertEqual(hook["carrierNotesLabel"], "Backing vocals")
+            for repeat in (0, 2 * BAR * 1000):
+                self.assertEqual(note_at(hook["carrierNotesMs"], repeat + 100), [])
+                self.assertEqual(note_at(hook["carrierNotesMs"], repeat + 300), [76])
+                self.assertEqual(note_at(hook["carrierNotesMs"], repeat + 700), [72])
+                self.assertEqual(note_at(hook["carrierNotesMs"], repeat + 900), [])
             for cut, pitches in [
                 (hook, [33, 28, 33, 28]),
                 (teaser, [35, 33]),

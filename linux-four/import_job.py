@@ -23,7 +23,7 @@ from library import IMPORTS
 from audio import DATA
 from recording import local_path, fetch
 from carrier import carrier
-from import_bass import recording_bass, cut_bass
+from import_bass import recording_bass, cut_bass as project_notes
 from import_queue import enqueue, job_root, read, save, sync_dir
 
 RATE = 48000
@@ -88,6 +88,9 @@ Check the timing at several entrances and repeats, and identify the chorus or pr
 Save backing.wav (full vocal-removed accompaniment), drums.wav (isolated percussion only), and guide.wav (isolated vocal) against the original recording clock, including the intro.
 When an isolated bass stem is available for this exact edition, save it as bass.wav on that same clock, including rests.
 The desk derives the vocoder bass from that stem or from the instrumental with percussion removed.
+When the recording has pitched backing voices, isolate them from the lead and check their notes against the vocal stem.
+Write the confirmed chant, response and harmony notes in analysis.json as backingVocalNotesMs, an array of
+[start_ms, end_ms, MIDI pitch] on the recording clock. Leave rests, spoken interjections and effects silent.
 For percussion separation, the HT-Demucs FT drums specialist is expected at {drums_model}.
 Use {tools}/scripts/separate_drums.py with backing.wav, the model path, and drums.wav.
 Save analysis.json with title, artist, key, bpm (quarter notes/minute), meter (4), downbeats (measured bar-start seconds
@@ -168,6 +171,13 @@ def validate(meta, seconds):
         raise ValueError("Duplicate, missing or unordered downbeats")
     if abs(np.median(np.diff(grid)) * meta["bpm"] / 240 - 1) > 0.15:
         raise ValueError("Tempo disagrees with bar grid")
+    voices = meta.get("backingVocalNotesMs", [])
+    if not isinstance(voices, list) or any(
+        not isinstance(note, list) or len(note) != 3 or any(type(x) is not int for x in note)
+        or not 0 <= note[0] < note[1] <= round(seconds * 1000) or not 0 <= note[2] <= 127
+        for note in voices
+    ):
+        raise ValueError("Invalid backing vocal MIDI notes")
     rows = meta["rows"]
     if not rows:
         raise ValueError("No timed lyrics")
@@ -412,6 +422,9 @@ def publish(job, recording, imports, bars, sections=False, *, request=None):
             if type(start) is not int or not 0 <= start < seconds * 1000:
                 raise ValueError("Full start lies outside the recording")
             full["fullStartMs"] = start
+        voices = meta.get("backingVocalNotesMs", [])
+        if voices:
+            full.update(carrierNotesMs=voices, carrierNotesLabel="Backing vocals")
         full["downbeats"] = meta["downbeats"]
         full["score"] = carrier(out / "backing.wav", meta["downbeats"])
         stage("Scoring the vocoder bass on the original recording clock")
@@ -449,7 +462,13 @@ def publish(job, recording, imports, bars, sections=False, *, request=None):
                 "rows": {"lead": warped_rows(rows, grid, length)},
                 "score": carrier(part / "backing.wav", np.arange(length + 1) * BAR),
             }
-            cut["score"]["bassNotesMs"] = cut_bass(bass, grid, length, BAR)
+            cut["score"]["bassNotesMs"] = project_notes(bass, grid, length, BAR)
+            vocal_part = voices if not gate else [
+                [max(a, gate[0]), min(b, gate[1]), pitch]
+                for a, b, pitch in voices if a < gate[1] and b > gate[0]
+            ]
+            if notes := project_notes(vocal_part, grid, length, BAR):
+                cut.update(carrierNotesMs=notes, carrierNotesLabel="Backing vocals")
             if ident == "teaser":
                 cut["loopRole"] = "teaser"
                 cut["teaserWindowMs"] = [round(np.interp(ms / 1000, grid, np.arange(len(grid)))

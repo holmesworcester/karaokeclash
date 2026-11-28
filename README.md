@@ -45,6 +45,8 @@ Select **TAL Vocoder** on a mic to see its rotary controls directly on the pane.
 
 Each pane starts on **MIDI → All parts**. The selector lists the focused score, additional instruments, original score and earlier extraction when the recording has them. Switch during playback to hear the new arrangement on the same beat. The MIDI monitor, harmony and vocoder follow that pane’s choice through tempo changes and practice cuts.
 
+For imports with a scored backing vocal, **All parts** includes the chant or harmony. Select **Backing vocals** to hear that line on its own, or **Instruments** for the accompaniment. Add Song accepts `backingVocalNotesMs` in the recording analysis and fits those notes to each practice cut and repeat.
+
 Use **Presets… → Whole pane** to name and recall a sound on any mic. For a local preset, choose an effect or individual control in the same menu, or right-click its dial. **Save preset** creates a name and **Update preset** replaces that name for the selected controls. Recalling a preset preserves song assignments, mic routing and the transport. Pulse, Delay and Comp retain their settings while bypassed.
 
 **Glide** connects the moving riff, and **Lead** blends in a separately scored vocal melody. The desk matches prepared recordings and practice cuts to their instrumental parts by PCM landmarks. The ATC carrier plays its written arrangement. “A Real Hero” and Ann Lee’s “2 Times” follow the isolated bass. Prepared parts also cover the Joyce Manor guitars, Semisonic chord changes, La Prohibida keyboards, Owl City arpeggio, Eiffel 65 riff, Daft Punk scores and the DJ Quicksilver Radio Mix.

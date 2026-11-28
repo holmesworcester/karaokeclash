@@ -302,7 +302,13 @@ class DeskAudio(Audio):
 
         loop = self.catalog_loops.get(key, original)
         written = bool(self.call("has_carrier", loop.encode()))
-        if extra:
+        label = song.get("carrierNotesLabel") if song.get("carrierNotesMs") else None
+        if label:
+            # The default already includes these cut-relative notes. Give the singer
+            # independent access to both the complete accompaniment and the vocal line.
+            add("focus", full, original, keep, "Instruments")
+            add("extra", dict(part, notes=song["carrierNotesMs"], pan={}), "", False, label)
+        elif extra:
             add("focus", focus, original, keep, "Focused part", True)
             add("extra", dict(part, notes=extra, pan=layers.get("pan", {})), "", False,
                 layers.get("label", VERSIONS["extra"]))
@@ -310,7 +316,7 @@ class DeskAudio(Audio):
             add("original", dict(part, notes=[]), loop, True, VERSIONS["original"])
         if "earlier" in layers and (layers["earlier"] != full["notes"] or authored != keep):
             add("earlier", dict(part, notes=layers["earlier"], pan={}), original,
-                authored and not part.get("rendered"), VERSIONS["earlier"], True)
+                authored and not part.get("rendered"), VERSIONS["earlier"], not label)
         for slot, mode in enumerate(VERSIONS):
             if slot and mode not in versions:
                 self.call("score_variant", main.encode(), slot, b"")
