@@ -18,6 +18,34 @@ from test_singing import prepare_vocal
 
 
 class SongLoops(unittest.TestCase):
+    def test_installed_victory_lap_five_uses_doechii_for_main_and_keeps_last_verse(self):
+        songs = calibrated_catalog(library.catalog())
+        key = "studio-victory-lap-five/full"
+        if key not in songs:
+            self.skipTest("Requires the private Victory Lap Five recording")
+        choices = backing_loops(songs)[key]
+        main = songs[choices["main"].source]
+        full = songs[choices["full"].source]
+        teaser = songs[choices["teaser"].source]
+        chorus = main["rows"]["lead"]
+        self.assertEqual(chorus[0][0][-1], "teapot")
+        self.assertEqual(chorus[-1][0][-3:], ["I", "need", "that"])
+        self.assertEqual([row[0] for row in teaser["rows"]["lead"]], [chorus[0][0]])
+        self.assertAlmostEqual(main["end"], 8 * BAR, places=4)
+        self.assertAlmostEqual(full["end"], 344.571, places=2)
+        self.assertTrue(any("history" in words and 300000 < times[0][0] < 310000
+                            for words, times in full["rows"]["lead"]))
+        self.assertGreater(full["rows"]["lead"][-1][1][-1][1], 340000)
+        # The pitched response enters on the last bar. The rap stays rhythmically free.
+        notes = main["carrierNotesMs"]
+        self.assertTrue(notes)
+        self.assertTrue(all(7 * BAR * 1000 < start < end < main["end"] * 1000
+                            for start, end, _ in notes))
+        for song in (main, teaser, full):
+            for path in (song["bed"], song["guide"], song["bed"].with_name("drums.wav")):
+                with wave.open(str(path)) as stem:
+                    self.assertEqual(stem.getnframes(), round(song["end"] * RATE))
+
     def test_milkshake_teaser_stops_after_two_words_until_the_next_pass(self):
         title = "Milkshake"
         # The four-bar chorus starts the next phrase at 714 ms.

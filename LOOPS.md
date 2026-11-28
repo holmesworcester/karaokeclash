@@ -48,6 +48,7 @@ Find the song in the library and assign it to a mic. On that pane, press **T** f
 | Sweet Dreams | The first title line | 2.09 s | The refrain through the final line about being abused |
 | Technologic | The first group of commands | 3.91 s | The repeated title chant |
 | The Way Life Goes | The first reassurance | 3.72 s | The longer sung hook and its return |
+| Victory Lap Five | Doechii’s opening line over the beat | 4.72 s | The eight-bar Doechii chorus through the sampled response. Full plays the 5:45 recording with all five verses. |
 | Walking on a Dream | The opening title line | 4.09 s | The thrill-of-it refrain through the two-become-one line |
 | Wicked Game | The opening world-on-fire line | 1.55 s | The falling-in-love refrain and response |
 | You Spin Me Round (Like a Record) | The opening of the chorus | 4.68 s | The complete eight-bar chorus from the 2009 version |
