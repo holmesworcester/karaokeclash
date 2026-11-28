@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+"""Rebuild optional MIDI arrangements from the provisioned desk recordings and original parts."""
+import argparse
+from bisect import bisect_left
+from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor
+from functools import lru_cache
+import gzip
+import json
+import os
+from pathlib import Path
+import sys
+import tempfile
+
+import numpy as np
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("runtime", type=Path, help="runtime source checkout with the Joyce Manor bar map")
+parser.add_argument("data", type=Path, help="desk data directory containing chants-lbd and private/linux-four")
+parser.add_argument("--output", type=Path, help="destination for recording-matched MIDI versions")
+parser.add_argument("--workers", type=int, default=2)
+args = parser.parse_args()
+if args.workers < 1:
+    parser.error("--workers must be positive")
+os.environ["KARAOKE_DATA"] = str(args.data.resolve())
+code = Path(__file__).resolve().parents[1] / "linux-four"
+sys.path[:0] = [str(code), str(args.runtime.resolve() / "linux-four")]
+
+from backing_loops import calibrated_catalog
+from carrier import note_candidates, pitched_audio, prepare_score, SR
+from import_bass import bass_audio, bass_pitch_frames
+from pitched_notes import confirmed_notes, pitch_evidence
+from playback import catalog
+from recording_parts import PARTS, part_path
+
+sources = args.data / "chants-lbd/sources"
+output = args.output or PARTS / "versions"
+
+
+def bass(stem, bpm):
+    keys = bass_pitch_frames(bass_audio(stem), bpm, True)
+    edges = np.r_[0, np.where(np.diff(keys) != 0)[0]+1, len(keys)]
+    return [(int(a*10), int(b*10), int(keys[a])) for a, b in zip(edges, edges[1:])
+            if 26 <= keys[a] <= 54 and b-a >= 8]
+
+
+@lru_cache(maxsize=1)
+def guitars():
+    import guitarpro
+
+    score = guitarpro.parse(sources / "Constant_Headache/guitars.gp5")
+    grid = json.loads((args.runtime / "songs/constant-headache/bar-times.json").read_text()) + [184.306]
+    bars = ([1,1,2,3,4,5,2,3,4,6] + [7,8]*4 + list(range(9,17)) + [17,18,19,20,17,18,19,21]
+            + [22,23]*4 + list(range(24,40)) + [40,41,42,43,40,41,42,44,45])
+    notes = bass(sources / "Constant_Headache/bass.wav", 104)
+    # The existing focused part has the measured individual string releases in the last bar.
+    for i, bar in enumerate(bars[:-1]):
+        for track in score.tracks:
+            measure = track.measures[bar-1]
+            tick = (grid[i+1]-grid[i])/measure.header.length
+            for beat in measure.voices[0].beats:
+                start = grid[i] + (beat.start-measure.header.start)*tick
+                end = min(grid[i+1], start+beat.duration.time*tick) - .008
+                for note in beat.notes:
+                    pitch = track.strings[note.string-1].value + note.value + track.offset
+                    notes.append((round(start*1000), round(end*1000), pitch))
+    return notes, grid
+
+
+def remaining_parts(name, played, stable):
+    if name in ("constant-headache", "headache-chant"):
+        notes, grid = guitars()
+        if name == "headache-chant":
+            beats = np.arange(17)
+            edges = np.interp(beats+62, 4*(np.arange(len(grid))-2), grid)*1000
+            notes = [(round(np.interp(a, edges, beats)*60000/126),
+                      round(np.interp(b, edges, beats)*60000/126), k) for a,b,k in notes
+                     if b > edges[0] and a < edges[-1]]
+        return "Guitars and bass", notes
+    if name == "amor-electrico":
+        return "Bass", bass(sources / "Amor_Electrico/bass.wav", 126)
+    if name.startswith("closing-"):
+        notes = []
+        for a,b,k in stable:
+            mid = (a+b)/2
+            chord = {n % 12 for x,y,n in played if x <= mid < y}
+            if k % 12 in chord and 26 <= k <= 76 and (k < 55 or b-a >= 240):
+                notes.append((a,b,k))
+        return "Bass and guitar voicings", notes
+    layers = {"a-real-hero": ("Sustained synth", [65,69,70], 300),
+              "2-times": ("Keyboard", [65,69,70,72,81], 210),
+              "2fly": ("Bass", [31,32,34,36,39,41,43,44,46,48,50,51,53,55], 150),
+              "blue": ("Bass and lower keys", [k for k in range(32,64) if k%12 in (0,2,3,5,7,9,10)], 210),
+              "bellissima-radio": ("Sustained keyboard", [55,58,60,63,67,70,72,75], 290)}
+    label, keys, hold = layers.get(name, ("", (), 0))
+    return label, [(a,b,k) for a,b,k in stable if k in keys and b-a >= hold]
+
+
+def build(path):
+    name = part_path(path).stem
+    focused = prepare_score(path)
+    pcm = pitched_audio(path, path.with_name("drums.wav"))
+    earlier = note_candidates(pcm, focused["duration"])
+    evidence = pitch_evidence(pcm, SR)
+    times, tuned, _, partials = evidence
+    confirmed, pan = confirmed_notes(earlier, evidence)
+    stable = []
+    for a,b,k in confirmed:
+        lo, hi = bisect_left(times, a*.001), bisect_left(times, b*.001)
+        if hi > lo and b-a >= 150 and 27 <= k <= 88:
+            if (tuned[lo:hi,k-21] & ~partials[lo:hi,k-21]).mean() >= .72:
+                stable.append((a,b,k))
+    label, candidates = remaining_parts(name, focused["notes"], stable)
+    held = defaultdict(list)
+    for a,b,k in focused["notes"]:
+        held[k].append((a,b))
+    extra = sorted({(a,b,k) for a,b,k in candidates if b > a >= 0 and
+                    not any(min(b,y)-max(a,x) > .30*min(b-a,y-x) for x,y in held[k])})
+    versions = {"earlier": earlier}
+    if extra:
+        positions = {str(k): pan[str(k)] for k in sorted({n[2] for n in extra}) if str(k) in pan}
+        versions.update(extra=extra, label=label, pan=positions)
+    with tempfile.NamedTemporaryFile(dir=output, delete=False) as tmp:
+        temp = Path(tmp.name)
+        try:
+            tmp.write(gzip.compress(json.dumps(versions, separators=(",", ":")).encode(), mtime=0))
+            tmp.close()
+            temp.replace(output / (name + ".json.gz"))
+        finally:
+            temp.unlink(missing_ok=True)
+    return name, len(extra), len(earlier)
+
+
+if __name__ == "__main__":
+    paths = {s["carrierBacking"] for s in calibrated_catalog(catalog()).values()}
+    known = sorted(p for p in paths if p.is_file() and part_path(p))
+    if not known:
+        parser.error("No matching recordings and focused charts in the supplied library")
+    output.mkdir(parents=True, exist_ok=True)
+    with ProcessPoolExecutor(args.workers) as pool:
+        for name, extra, earlier in pool.map(build, known):
+            print(f"{name}: {extra} additional notes, {earlier} earlier candidates", flush=True)

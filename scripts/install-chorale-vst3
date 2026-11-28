@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Install the upstream Linux x86-64 VST3, including its bundle metadata.
+set -euo pipefail
+repo=$(dirname "$(dirname "$(realpath "$0")")")
+dir="$repo/build/chorale-v1.3.0"
+bundle=Chorale.vst3
+module="$bundle/Contents/x86_64-linux/Chorale.so"
+digest=558fd28ff267982665fb799fb818dd9ccf4c434725a187045a065bf5cc8440e8
+mkdir -p "$dir"
+exec 9>"$dir/install.lock"
+flock 9
+if [[ -f "$dir/$module" ]] && (cd "$dir" && echo "$digest  $module" | sha256sum --check --status 2>/dev/null); then exit 0; fi
+stage=$(mktemp -d "$dir/.install-XXXXXXXX")
+trap 'rm -rf "$stage"' EXIT
+curl -fsSL --retry 3 https://github.com/rithulkamesh/chorale/releases/download/v1.3.0/Chorale-Linux.zip -o "$stage/plugin.zip"
+(cd "$stage" && echo 'e1baf0645163f4602147fc5bc745f12b651ba3982af71301bcc00e44b0d7c3a9  plugin.zip' | sha256sum -c - >&2)
+python3 -m zipfile -e "$stage/plugin.zip" "$stage/vendor"
+(cd "$stage/vendor/VST3" && echo "$digest  $module" | sha256sum -c - >&2)
+cp -R "$stage/vendor/VST3/$bundle" "$dir/"

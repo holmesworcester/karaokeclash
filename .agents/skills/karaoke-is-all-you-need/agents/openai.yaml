@@ -1,0 +1,4 @@
+interface:
+  display_name: "Karaoke Is All You Need"
+  short_description: "Build word-timed karaoke from a recording"
+  default_prompt: "Use $karaoke-is-all-you-need to make a word-highlighted karaoke track from my recording."

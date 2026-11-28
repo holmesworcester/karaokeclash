@@ -1,0 +1,47 @@
+#!/usr/bin/python3
+"""Install the shared-library Linux desk for the current desktop user."""
+
+import argparse
+import os
+import subprocess
+from pathlib import Path
+
+
+def install(runtime):
+    runtime = runtime.expanduser().resolve()
+    if not (runtime / "linux-four/audio.py").is_file():
+        raise SystemExit(f"No Linux audio runtime in {runtime}")
+    subprocess.run([Path(__file__).with_name("desk-data"), "link"], check=True)
+    subprocess.run([Path(__file__).with_name("install-pitch-model")], check=True)
+    for installer in ("install-tal-vst3", "install-chorale-vst3"):
+        subprocess.run([Path(__file__).with_name(installer)], check=True)
+    bindir = Path(os.environ.get("XDG_BIN_HOME", Path.home() / ".local/bin"))
+    config = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "karaokeclash"
+    apps = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "applications"
+    for directory in (bindir, config, apps):
+        directory.mkdir(parents=True, exist_ok=True)
+
+    launcher = bindir / "karaoke-playground-4"
+    source = Path(__file__).resolve().with_name("karaoke-playground-4")
+    # Replace an existing installation (including the legacy launcher) atomically.
+    link = bindir / f".karaoke-playground-4.{os.getpid()}"
+    link.symlink_to(source)
+    link.replace(launcher)
+    (config / "runtime").write_text(str(runtime) + "\n")
+    # Exec's quoted arguments are unescaped after the desktop file's string escapes.
+    quoted = "".join("\\" + c if c in '\\"$`' else c for c in str(launcher))
+    executable = quoted.replace("\\", "\\\\").replace("%", "%%")
+    desktop = apps / "karaoke-playground-4.desktop"
+    desktop.write_text(
+        "[Desktop Entry]\nType=Application\nName=Karaoke Playground 4\n"
+        "Comment=Shared song library and four-microphone performance desk\n"
+        f'Exec="{executable}"\nIcon=audio-input-microphone\n'
+        "Terminal=false\nCategories=AudioVideo;Audio;Music;\n"
+    )
+    print(f"Installed {desktop} and {launcher}")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("runtime", type=Path, help="extracted Linux runtime or built runtime checkout")
+    install(parser.parse_args().runtime)

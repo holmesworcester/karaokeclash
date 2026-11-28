@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+runtime=${KARAOKE_RUNTIME:-}
+if [[ -z $runtime ]]; then
+    IFS= read -r runtime < "${XDG_CONFIG_HOME:-$HOME/.config}/karaokeclash/runtime"
+fi
+export KARAOKE_RUNTIME="$runtime"
+export KARAOKE_TTS_MODEL_DIR="${KARAOKE_TTS_MODEL_DIR:-${KARAOKE_DATA:-/mnt/storage/holmes-karaoke}/private/linux-four/kokoro-v1}"
+KARAOKE_DESK_ENGINE=$(scripts/build-engine.sh "${KARAOKE_LINUX_BUILD:-$runtime/build/linux-four}")
+export KARAOKE_DESK_ENGINE OPENBLAS_NUM_THREADS=1
+export PYTHONPATH="$PWD/linux-four:$runtime/linux-four"
+if [[ ${1:-} == identity ]]; then
+    dir="$PWD/build/homer-eval-models"
+    mkdir -p "$dir"
+    export KARAOKE_DNSMOS="$dir/sig_bak_ovr.onnx"
+    checksum=269fbebdb513aa23cddfbb593542ecc540284a91849ac50516870e1ac78f6edd
+    if [[ ! -f $KARAOKE_DNSMOS ]] || ! echo "$checksum  $KARAOKE_DNSMOS" | sha256sum --check --status; then
+        stage=$(mktemp "$dir/dnsmos-XXXXXXXX")
+        trap 'rm -f "$stage"' EXIT
+        curl -fLsS --retry 3 https://raw.githubusercontent.com/microsoft/DNS-Challenge/82f1b17e7776a43eee395d0f45bae8abb700ad00/DNSMOS/DNSMOS/sig_bak_ovr.onnx -o "$stage"
+        echo "$checksum  $stage" | sha256sum --check --status
+        mv "$stage" "$KARAOKE_DNSMOS"
+    fi
+    exec xvfb-run -a /usr/bin/python3 -m unittest discover -v -s tests -p 'homer_identity_hardware.py'
+fi
+: "${KARAOKE_WHISPER_MODEL:?Set the path to whisper.cpp ggml-small.bin}"
+scripts/install-speech-model "$KARAOKE_TTS_MODEL_DIR"
+export PYTHONPATH="$PWD/tests:$PYTHONPATH"
+exec xvfb-run -a /usr/bin/python3 -m unittest -v homer_monitor_hardware homer_speech_hardware

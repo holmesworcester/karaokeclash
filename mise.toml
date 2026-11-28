@@ -1,0 +1,30 @@
+[tasks.test-source-desk]
+description = "Build the Linux desk and test the controls and native transport with synthetic songs"
+run = "bash scripts/test-desk.sh --source"
+
+[tasks.test-desk]
+description = "Prepare the Linux runtime and test the GTK desk and native playback"
+run = "bash scripts/test-desk.sh"
+
+[tasks.test-import-scope]
+description = "Stop a real desk service during a private song import and verify recovery"
+run = "bash scripts/test-desk.sh --import-scope"
+
+[tasks.test-routing]
+description = "Test pane routing, voice effects and the room tempo with short native renders"
+run = "bash scripts/test-desk.sh --routing"
+
+[tasks.test-homer-speech]
+description = "Build the desk and check Homer speech, live pitch and monitor deadlines on the Framework"
+run = "bash scripts/test-homer-speech"
+
+[tasks.test-homer-identity]
+description = "Compare live Homer audio to reserved references and the old voice"
+run = "bash scripts/test-homer-speech identity"
+
+[tasks.audit-carriers]
+description = "Prepare the desk library and measure chord coverage against each installed backing"
+run = """
+mkdir -p build/evidence
+scripts/karaoke-playground-4 --audit-carriers --workers "${KARAOKE_CARRIER_WORKERS:-2}" --report build/evidence/carriers.json
+"""

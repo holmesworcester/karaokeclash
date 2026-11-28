@@ -1,0 +1,38 @@
+--- a/src/processor.rs
++++ b/src/processor.rs
+@@ -82,6 +82,11 @@
+ }
+ 
+ impl Processor {
++    /// Set per-channel gains for the four scored MIDI harmony voices.
++    pub fn set_score_mix(&mut self, levels: [[f32; 2]; 4]) {
++        self.resynthesis.set_score_mix(levels);
++    }
++
+     /// Validates the settings, allocates histories and makes a new processor.
+     ///
+     /// Each processor is independent. `preparation` fixes the rate and the
+--- a/src/resynthesis.rs
++++ b/src/resynthesis.rs
+@@ -555,6 +555,11 @@
+         result
+     }
+ 
++    // The desk supplies the recorded pan and level of each scored part.
++    pub(crate) fn set_score_mix(&mut self, levels: [[f32; 2]; 4]) {
++        self.harmony_pan = levels.map(|pair| pair.map(|gain| Q14::from_f64(gain as f64)));
++    }
++
+     /// Quantizes the controls and calculates the decay coefficients and the
+     /// voice pan gains again.
+     ///
+@@ -1233,6 +1238,9 @@
+                 final_ratio = current;
+                 self.voice_ratios[slot] = current;
+                 let position = self.move_reader(slot, current, period, 0, false);
++                // Keep the lead reader clock for the formant model, but only
++                // the four MIDI-targeted readers belong in the vocal return.
++                if slot == 0 { continue; }
+                 let (mut value, _) = history::interpolation(&self.filtered, position);
+                 if slot > 0 {
+                     value = value.mul(self.harmony_gains[slot - 1]);

@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Install the vendor's Linux x64 VST3 and the header-only Steinberg build dependency.
+set -euo pipefail
+repo=$(dirname "$(dirname "$(realpath "$0")")")
+dir="$repo/build/tal-vst3"
+bundle=TAL-Vocoder-2.vst3
+module="$bundle/Contents/x86_64-linux/TAL-Vocoder-2.so"
+mkdir -p "$dir"
+exec 9>"$dir/install.lock"
+flock 9
+stage=$(mktemp -d "$dir/.install-XXXXXXXX")
+trap 'rm -rf "$stage"' EXIT
+sdk=31d6eeba6daaa3e2a8bfbe3e7a90ca0b7fbfbc1c
+if [[ ! -f "$dir/$sdk/pluginterfaces/vst/ivstaudioprocessor.h" ]]; then
+    curl -fsSL --retry 3 "https://codeload.github.com/steinbergmedia/vst3_pluginterfaces/tar.gz/$sdk" -o "$stage/headers.tgz"
+    (cd "$stage" && echo '7c9d19af0e81711edde34c3eb2e5e6d150ae1f449501bb5b352605b9590654d7  headers.tgz' | sha256sum -c - >&2)
+    mkdir -p "$stage/$sdk/pluginterfaces"
+    tar -xzf "$stage/headers.tgz" -C "$stage/$sdk/pluginterfaces" --strip-components=1
+    mv "$stage/$sdk" "$dir/"
+fi
+if [[ ${1:-} == --headers ]]; then
+    echo "$dir/$sdk"
+    exit 0
+fi
+if [[ -f "$dir/$module" ]] && (cd "$dir" && echo "5fae625ea34998ddd19c448de94287d5112cfe765497c1ba359f517e426d285b  $module" | sha256sum --check --status 2>/dev/null); then
+    exit 0
+fi
+curl -fsSL --retry 3 https://tal-software.com/downloads/plugins/TAL-Vocoder-2_64_linux.zip -o "$stage/plugin.zip"
+(cd "$stage" && echo 'bce4a942a37c0c42b87f9bc849e427641a71856dc0696d7eff42266a37a83ec6  plugin.zip' | sha256sum -c - >&2)
+python3 -m zipfile -e "$stage/plugin.zip" "$stage/vendor"
+mkdir -p "$(dirname "$dir/$module")"
+mv "$stage/vendor/TAL-Vocoder-2/$module" "$dir/$module"

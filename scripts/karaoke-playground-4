@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+checkout=$(dirname "$(dirname "$(realpath "$0")")")
+config=${XDG_CONFIG_HOME:-"$HOME/.config"}/karaokeclash/runtime
+runtime=${KARAOKE_RUNTIME:-}
+if [[ -z $runtime && -f $config ]]; then
+    IFS= read -r runtime < "$config"
+fi
+if [[ ! -f "$runtime/linux-four/audio.py" ]]; then
+    echo 'Set KARAOKE_RUNTIME to an extracted Linux runtime or run scripts/install-linux-four with its path.' >&2
+    exit 1
+fi
+export OPENBLAS_NUM_THREADS=1
+export PIPEWIRE_LATENCY="${KARAOKE_PERIOD:-64}/48000"
+export PIPEWIRE_RATE=1/48000
+export PATH="$HOME/.local/bin:$PATH"
+if [[ -z ${TMPDIR:-} && -d /mnt/storage/holmes-tmp ]]; then
+    export TMPDIR=/mnt/storage/holmes-tmp
+fi
+launch=(/usr/bin/python3 "$checkout/preview.py" "$runtime" "$@")
+if command -v pw-jack >/dev/null; then
+    exec pw-jack "${launch[@]}"
+fi
+exec "${launch[@]}"

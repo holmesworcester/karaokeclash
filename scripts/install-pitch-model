@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root=$(dirname "$(dirname "$(realpath "$0")")")
+model="$root/linux-four/basic-pitch/nmp.onnx"
+[[ -f "$model" ]] && exit 0
+mkdir -p "$(dirname "$model")"
+tmp=$(mktemp "$model.XXXXXXXX")
+trap 'rm -f "$tmp"' EXIT
+curl -fsSL --retry 3 https://raw.githubusercontent.com/spotify/basic-pitch/9991303bba609a3b93089d13ec80d1d495083596/basic_pitch/saved_models/icassp_2022/nmp.onnx -o "$tmp"
+echo "2c3c1d144bfa61ad236e92e169c13535c880469a12a047d4e73451f2c059a0ec  $tmp" | sha256sum -c -
+mv "$tmp" "$model"

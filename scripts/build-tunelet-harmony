@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Build the desk's four MIDI-targeted voices from the pinned Tunelet v0.2.0 source.
+set -euo pipefail
+repo=$(dirname "$(dirname "$(realpath "$0")")")
+rev=6fe3d5b636dbb871614501ca7a8400ad3194acdb
+dir="$repo/build/tunelet-source"
+mkdir -p "$dir"
+exec 8>"$dir/build.lock"
+flock 8
+# Test and desktop builds may share the cache while using different native ABIs.
+key=$(cat "$0" "$repo/native/tunelet-harmony.patch" "$repo/native/score_harmony.rs" | sha256sum | cut -c1-16)
+lib="$dir/libscore_harmony-$key.a"
+if [[ ! -f "$lib" ]]; then
+    stage=$(mktemp -d "$dir/build.XXXXXXXX")
+    trap 'rm -rf "$stage"' EXIT
+    archive="$dir/source.tgz"
+    if [[ ! -f "$archive" ]] || ! echo "b7e63ccf1003859abb05d495d9f7b092793a8469f46359df01cc148f48b66fab  $archive" | sha256sum --check --status >/dev/null 2>&1; then
+        curl -fsSL --retry 3 "https://codeload.github.com/ByteLandTechnology/tunelet/tar.gz/$rev" -o "$stage/source.tgz"
+        (cd "$stage" && echo 'b7e63ccf1003859abb05d495d9f7b092793a8469f46359df01cc148f48b66fab  source.tgz' | sha256sum -c - >&2)
+        mv "$stage/source.tgz" "$archive"
+    fi
+    tar xf "$archive" -C "$stage" --strip-components=1
+    (cd "$stage" && patch -s -p1 < "$repo/native/tunelet-harmony.patch")
+    flags=(--edition=2021 -C opt-level=3 -C panic=abort -C relocation-model=pic)
+    rustc "${flags[@]}" --crate-type=rlib --crate-name=tunelet_harmony "$stage/src/lib.rs" -o "$stage/libtunelet_harmony.rlib"
+    rustc "${flags[@]}" --crate-type=staticlib "$repo/native/score_harmony.rs" --extern "tunelet_harmony=$stage/libtunelet_harmony.rlib" -o "$stage/libscore_harmony.a"
+    mv "$stage/libscore_harmony.a" "$lib"
+fi
+echo "$lib"

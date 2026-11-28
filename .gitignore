@@ -1,0 +1,14 @@
+__pycache__/
+/build/
+
+# Private material provisioned alongside a source-only GitHub checkout.
+linux-four/*.json
+linux-four/*.flac
+linux-four/basic-pitch/*.onnx
+linux-four/recording-parts/*.json
+linux-four/recording-parts/versions/*.json.gz
+linux-four/starred-arrangements/*.json
+linux-four/starred-arrangements/*.mid
+linux-four/vocoder-scores/*.json
+tests/fixtures/homer/*.flac
+tests/fixtures/catalog-clocks.csv

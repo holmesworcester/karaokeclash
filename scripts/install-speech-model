@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Provision the optional CPU voice once. Performances run entirely offline.
+set -euo pipefail
+dir=${1:?Pass the Kokoro model directory}
+mkdir -p "$dir"
+stage=$(mktemp -d "$dir/.download-XXXXXXXX")
+trap 'rm -rf "$stage"' EXIT
+
+fetch() {
+    local file=$1 sha=$2 url=$3
+    if [[ -f $dir/$file ]] && (cd "$dir" && echo "$sha  $file" | sha256sum --check --status 2>/dev/null); then
+        return
+    fi
+    curl -fLsS --retry 3 "$url" -o "$stage/$file"
+    (cd "$stage" && echo "$sha  $file" | sha256sum --check)
+    mv "$stage/$file" "$dir/$file"
+}
+
+fetch am_echo.bin 3968b92c3c4cd1c4416dbded36c13eaa388a90d5788d02a13e4d781f5f8cf3c3 \
+    https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/am_echo.bin
+fetch model.onnx beb0d1848dee9a49da392cc3df26958d46cfa35d321edf434f52949153f0df3a \
+    https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/kokoro-v1.0.onnx
