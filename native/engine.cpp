@@ -472,6 +472,9 @@ void desk_vocoder_shape(Engine *e, int i, float formant, float harmonics, int re
 void desk_stereo_width(Engine *e, int lane, float percent) {
     e->mix.lane[lane].effect.stereoWidth = std::clamp(percent * .01f, 0.f, 1.f);
 }
+void desk_tal_source_level(Engine *e, int lane, float percent) {
+    e->mix.lane[lane].talSourceLevel = std::clamp(percent * .01f, 0.f, 1.f);
+}
 void desk_glide(Engine *e,int lane,float ms) {
     e->mix.lane[lane].effect.glideMs=std::clamp(ms,0.f,240.f);
 }

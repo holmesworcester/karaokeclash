@@ -37,6 +37,8 @@ struct Lane {
     Block signal{}, wet{};
     RoomReverb room, sideRoom;
     std::atomic<float> roomMix{0};
+    std::atomic<float> talSourceLevel{0};
+    float sourceGain = 0;
     float filtered = 0, sideFiltered = 0;
     void prepare(double rate) {
         singer.reset(singer_new(rate));
@@ -128,6 +130,7 @@ struct FourMixer {
                 l.sideRoom.process(nullptr, 0, 0);
                 l.effect.deselect();
                 l.peak = 0;
+                l.sourceGain = 0;
                 continue;
             }
             for (unsigned i = 0; i < n; i++) {
@@ -169,6 +172,9 @@ struct FourMixer {
                     l.signal[i] = limitVoice(l.shifter.process(l.signal[i]));
             }
             l.shifting = shift;
+            // Preserve this pane's selected vocal before the TAL return replaces it.
+            if (voice == talVocoder)
+                std::copy_n(l.signal.begin(), n, l.wet.begin());
             const bool preview = !std::isfinite(roomBar);
             const bool vocode = (id <= 0 || l.strict) && usesCarrier(voice);
             if ((monitor || vocode) && score && (!preview || live || id == 0)) {
@@ -200,6 +206,14 @@ struct FourMixer {
                 l.effect.deselect();
                 if (l.strict) std::fill_n(l.signal.data(),n,0.f);
             }
+            if (voice == talVocoder) {
+                const float target = l.talSourceLevel.load();
+                const float step = 1.f / (.005f * rate);
+                for (unsigned i = 0; i < n; ++i) {
+                    l.sourceGain += std::clamp(target - l.sourceGain, -step, step);
+                    l.signal[i] += l.sourceGain * l.wet[i];
+                }
+            } else l.sourceGain = 0;
             // Recorded character examples already contain the voice conversion.
             if (!l.strict) {
                 std::copy_n(audition.begin(), auditionFrames, l.signal.begin());

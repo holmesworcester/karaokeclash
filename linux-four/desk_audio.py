@@ -50,6 +50,7 @@ class DeskAudio(Audio):
             "lead_note": (None, (P, S, D, D, I)),
             "score_unison": (None, (P, S, F)),
             "stereo_width": (None, (P, I, F)),
+            "tal_source_level": (None, (P, I, F)),
             "glide": (None, (P, I, F)),
             "lead_level": (None, (P, I, F)),
             "score_gains": (None, (P, S, FP)),

@@ -89,7 +89,7 @@ class ATCCarrier(unittest.TestCase):
         return left
 
     def test_bass_pedal_and_plucked_riff_follow_album_phase_at_two_tempos(self):
-        self.control("vocoder glide", self.control("vocoder settings").get_popover()).set_value(0)
+        self.control("vocoder glide").set_value(0)
         self.control("vocal lead").set_value(0)
         for mode, bpm in (("full", 126), ("main", 110), ("teaser", 126)):
             with self.subTest(mode=mode, bpm=bpm):
@@ -110,23 +110,20 @@ class ATCCarrier(unittest.TestCase):
                     # E3 releases at F2. Measure a long window to resolve F2's second harmonic.
                     self.assertGreater(tone(.1, 1.9, 52), 5 * tone(4.1, 5.9, 52))
 
-    def test_stereo_width_is_saved_per_mic_and_resets_with_the_popover(self):
+    def test_inline_stereo_width_is_saved_per_mic_and_resets(self):
         from desk import settings
-        popover = self.control("vocoder settings").get_popover()
-        width = self.control("vocoder stereo width", popover)
+        width = self.control("vocoder stereo width")
+        self.assertTrue(width.get_mapped())
         self.assertEqual(width.get_value(), 100)
         width.set_value(24)
         self.desk.flush()
         saved = settings()["strips"]
         self.assertEqual([s["stereo_width"] for s in saved], [24, 100, 100, 100])
-        for child in popover.get_child().get_children():
-            if isinstance(child, Gtk.Button) and child.get_label() == "Reset to defaults":
-                child.clicked()
-                break
+        self.control("reset vocoder controls").clicked()
         self.assertEqual(width.get_value(), 100)
 
     def test_glide_knob_bends_riff_through_the_gap_and_preserves_beat(self):
-        knob = self.control("vocoder glide", self.control("vocoder settings").get_popover())
+        knob = self.control("vocoder glide")
         self.assertEqual(knob.get_value(), 100)
         self.control("vocal lead").set_value(0)
         for mode, bpm in (("full", 126), ("main", 110)):
@@ -169,8 +166,7 @@ class ATCCarrier(unittest.TestCase):
                     y += .07*gain*np.sin(2*np.pi*hz*t)
                 return y
             return (t < 15*beat) * np.where(t < 8*beat, vowel(750,1200), vowel(320,2400))
-        menu = self.control("vocoder settings").get_popover()
-        self.control("vocoder preset",menu).set_active_id("Vowel stack")
+        self.control("vocoder preset").set_active_id("Vowel stack")
         pcm = self.chorus("full", 126, singer=singer)
         def formant_ratio(start):
             window = pcm[round(start*beat*RATE):round((start+5)*beat*RATE)]

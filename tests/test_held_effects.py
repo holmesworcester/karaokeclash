@@ -166,6 +166,30 @@ class HeldEffects(unittest.TestCase):
             np.testing.assert_array_equal(render(TAL_VOCODER, 0), 0)
             np.testing.assert_allclose(render(TAL_VOCODER, 50), wet/2, atol=1e-6)
 
+    def test_tal_source_vocal_mixes_the_selected_singer_independently_of_the_stereo_return(self):
+        def output(voice, source, wet, rehearsal, *, lane=0, score=True):
+            def setup(audio):
+                if score:
+                    self.load_fixture(audio, b"chords", [(0, 1, 69)], False)
+                audio.call("tal_source_level", lane, source)
+                chorus = next(i for i, p in enumerate(audio.tal_parameters(0)) if p.name == b"chorus")
+                audio.call("tal_set", 0, chorus, 1)
+            pcm = self.render(voice, rehearsal=rehearsal, input_signal=self.sung_vowel,
+                              load_score=setup, controls={0: (wet, 50, 5, 40)}, stereo=True)
+            return np.asarray(pcm)[:, 9600:33600]
+
+        for rehearsal in (False, True):
+            with self.subTest(rehearsal=rehearsal):
+                dry = output(0, 0, 100, rehearsal)
+                wet = output(TAL_VOCODER, 0, 100, rehearsal)
+                self.assertGreater(dry.std(), .03)
+                self.assertGreater((wet[0] - wet[1]).std(), .002)
+                both = output(TAL_VOCODER, 65, 40, rehearsal)
+                np.testing.assert_allclose(both, .65 * dry + .4 * wet, atol=2e-6)
+                np.testing.assert_allclose(output(TAL_VOCODER, 100, 0, rehearsal), dry, atol=1e-6)
+                np.testing.assert_allclose(output(TAL_VOCODER, 100, 100, rehearsal, lane=1), wet, atol=1e-6)
+                np.testing.assert_allclose(output(TAL_VOCODER, 65, 100, rehearsal, score=False), .65 * dry, atol=1e-6)
+
     def test_strict_vst_excludes_dry_pitch_and_sibilants_on_live_and_test_vocals(self):
         def mic(t):
             return sum(a*np.sin(2*np.pi*f*t) for a, f in ((.1,193),(.05,579),(.025,6301)))

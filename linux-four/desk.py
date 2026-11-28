@@ -29,6 +29,7 @@ from song_import import SongImport
 from test_mode import TestMode, VOCAL_SOURCES
 from dial import Dial
 from tal_controls import TalControls, TITLES
+from vocoder_controls import VocoderControls, VOCODER_PARAMS, VOCODER_HINTS, VOCODER_PRESETS
 from midi_versions import VERSIONS
 from pane_presets import PanePresets
 from library import lyric_position, resolve, scale_mask
@@ -87,34 +88,6 @@ def picker(label, items, select, disabled=lambda _: False):
     return b
 
 
-VOCODER_PARAMS = (
-    ("Dry / Wet", "%", 0, 100, 100),
-    ("Consonants", "%", 0, 100, 50),
-    ("Vocal attack", " ms", 1, 80, 5),
-    ("Release", " ms", 5, 300, 40),
-    ("Formant shift", " st", -12, 12, 0),
-    ("Carrier harmonics", "%", 0, 100, 55),
-    ("Synth register", "", -2, 1, 0),
-    ("Glide", " ms", 0, 240, 100),
-)
-VOCODER_HINTS = (
-    "At 100% only the speech-shaped carrier is heard while a carrier note plays.",
-    "Resynthesize S, F and T sounds with noise in the upper speech bands.",
-    "How quickly a syllable opens the frequency bands.",
-    "How long the bands ring after a syllable. Short times separate rap syllables.",
-    "Move the vowel resonances up or down while keeping the carrier notes.",
-    "Blend a rounded saw with a brighter saw and pulse for clearer speech.",
-    "Transpose the synthesized chord together. Speech range lowers high notes.",
-    "Bend connected MIDI melody notes. Zero plays the original scored attacks.",
-)
-VOCODER_PRESETS = {
-    "Tight speech": [100, 75, 2, 20, 0, 80, 1, 100],
-    "Vowel stack": [100, 38, 5, 64, 0, 88, 0, 100],
-    "Smooth vowels": [100, 30, 12, 95, -2, 35, 0, 100],
-}
-
-
-
 def strip(lyrics):
     return dict(
         lyrics=lyrics,
@@ -130,6 +103,7 @@ def strip(lyrics):
         reverb=0,
         lead=70,
         stereo_width=100,
+        tal_source_level=0,
         tal_params={},
         vocoder=[default for _, _, _, _, default in VOCODER_PARAMS],
         values=[p[3] for p in PARAMS],
@@ -201,6 +175,8 @@ def settings():
                                and 0 <= v <= 1} if isinstance(params, dict) else {}
             width = s.get("stereo_width", 100)
             s["stereo_width"] = max(0, min(100, width)) if isinstance(width, (int, float)) else 100
+            dry = s.get("tal_source_level", 0)
+            s["tal_source_level"] = max(0, min(100, dry)) if isinstance(dry, (int, float)) else 0
             lead = s.get("lead", 70)
             s["lead"] = max(0, min(100, lead)) if isinstance(lead, (int, float)) else 70
             saved["strips"][i] = {**strip(s["lyrics"]), **s}
@@ -301,11 +277,11 @@ class Desk:
         self.updating = False
         self.cells = []
         self.vocoder_panels = []
-        self.effect_menus = []
+        self.tal_panels = []
         self.window = Gtk.Window(title="Karaoke Playground 4")
         display = self.window.get_display()
         work = (display.get_primary_monitor() or display.get_monitor(0)).get_workarea()
-        self.window.set_default_size(min(1750, work.width - 24), min(1160, work.height - 64))
+        self.window.set_default_size(min(1750, work.width - 24), min(1320, work.height - 64))
         self.window.connect("destroy", self.close)
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin=8)
         # Preserve the full mic racks at smaller desktop sizes.
@@ -883,6 +859,9 @@ class Desk:
         for w in [mode, effects, hear, live, meter, pairing]:
             controls.add(w)
         rack.pack_start(controls, False, False, 0)
+        vocoder = VocoderControls(MIC_NAMES[i], i, s, self.audio, presets, self.save)
+        self.vocoder_panels.append(vocoder)
+        rack.pack_start(vocoder.inline, False, False, 0)
         knobs = Gtk.Grid(column_homogeneous=True, column_spacing=3, row_spacing=1)
         rack.pack_start(knobs, False, False, 0)
         names = (
@@ -967,7 +946,8 @@ class Desk:
                 presets.attach_control(key, widget)
         tal.bind_control = tal_binding
         tal.set_no_show_all(True)
-        playback.add(self.vocoder_controls(i, tal))
+        self.tal_panels.append(tal)
+        playback.add(vocoder.menu)
         playback.pack_start(status, True, True, 0)
         rack.pack_start(playback, False, False, 0)
         arrangement = Gtk.Box(spacing=6)
@@ -985,114 +965,6 @@ class Desk:
             tal_binding(index)
         self.cells.append((lyrics, anchor, effects, live, hear, meter, status))
         return box
-
-    def vocoder_controls(self, lane, tal):
-        menu = Gtk.MenuButton(label="Vocoder…")
-        menu.set_tooltip_text("Adjust the vocoder and its scored carrier")
-        menu.get_accessible().set_name(f"{MIC_NAMES[lane]} vocoder settings")
-        pop = Gtk.Popover.new(menu)
-        menu.set_popover(pop)
-        grid = Gtk.Grid(column_spacing=8, row_spacing=6, margin=10)
-        pop.add(grid)
-        values = self.strips[lane]["vocoder"]
-        sliders = {}
-        preset = Gtk.ComboBoxText()
-        preset.get_accessible().set_name(f"{MIC_NAMES[lane]} vocoder preset")
-        defaults = [spec[-1] for spec in VOCODER_PARAMS]
-        presets = {"Balanced": defaults, **VOCODER_PRESETS}
-        for name in (*presets, "Custom"):
-            preset.append(name, name)
-        grid.attach(Gtk.Label(label="Preset", xalign=0), 0, 0, 1, 1)
-        grid.attach(preset, 1, 0, 1, 1)
-        setting_preset = False
-
-        def apply():
-            self.audio.call("vocoder", lane, *values[:4])
-            self.audio.call("vocoder_shape", lane, *values[4:7])
-            self.audio.call("glide", lane, values[7])
-            name = next((key for key, params in presets.items() if params == values), "Custom")
-            if preset.get_active_id() != name:
-                preset.set_active_id(name)
-
-        def changed(widget, index):
-            values[index] = int(widget.get_active_id()) if index == 6 else round(widget.get_value())
-            if not setting_preset:
-                apply()
-                self.save()
-
-        def use_preset(widget):
-            nonlocal setting_preset
-            selected = presets.get(widget.get_active_id())
-            if selected is None:
-                apply()
-                return
-            if selected == values:
-                return
-            setting_preset = True
-            for index, value in enumerate(selected):
-                if index == 6:
-                    sliders[index].set_active_id(str(value))
-                else:
-                    sliders[index].set_value(value)
-            setting_preset = False
-            apply()
-            self.save()
-
-        for row, i in enumerate((0, 6, 7, 4, 5, 1, 2, 3), 1):
-            name, unit, lo, hi, _ = VOCODER_PARAMS[i]
-            label = Gtk.Label(label=name, xalign=0)
-            grid.attach(label, 0, row, 1, 1)
-            if i == 0:
-                mix_label = label
-            if i == 6:
-                slider = Gtk.ComboBoxText()
-                for mode, text in [(0, "Score pitch"), (1, "Speech range"), (-1, "−1 octave"), (-2, "−2 octaves")]:
-                    slider.append(str(mode), text)
-                slider.set_active_id(str(int(values[i])))
-                slider.connect("changed", changed, i)
-            else:
-                slider = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, lo, hi, 1)
-                slider.set_size_request(190, -1)
-                slider.set_digits(0)
-                slider.set_value_pos(Gtk.PositionType.RIGHT)
-                slider.connect("format-value", lambda _, val, u=unit: f"{val:.0f}{u}")
-                slider.set_value(values[i])
-                slider.connect("value-changed", changed, i)
-            slider.get_accessible().set_name(f"{MIC_NAMES[lane]} vocoder {name.lower()}")
-            slider.set_tooltip_text(VOCODER_HINTS[i])
-            sliders[i] = slider
-            setter = (lambda v, w=slider: w.set_active_id(str(int(v)))) if i == 6 else slider.set_value
-            self.preset_controls[lane].bind(f"vocoder.{i}", name, "vocoder",
-                                            lambda j=i: values[j], setter)
-            self.preset_controls[lane].attach_control(f"vocoder.{i}", slider)
-            grid.attach(slider, 1, row, 1, 1)
-        width = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 100, 1)
-        width.set_value(self.strips[lane]["stereo_width"])
-        width.set_digits(0)
-        width.set_tooltip_text("Use each instrument’s recorded stereo placement in the MIDI monitor and vocoder.")
-        width.get_accessible().set_name(f"{MIC_NAMES[lane]} vocoder stereo width")
-        def set_width(widget):
-            value = round(widget.get_value())
-            self.strips[lane]["stereo_width"] = value
-            self.audio.call("stereo_width", lane, value)
-            self.save()
-        width.connect("value-changed", set_width)
-        self.preset_controls[lane].bind("stereo_width", "Stereo width", "vocoder",
-                                        width.get_value, width.set_value)
-        self.preset_controls[lane].attach_control("stereo_width", width)
-        self.audio.call("stereo_width", lane, width.get_value())
-        grid.attach(Gtk.Label(label="Stereo width (%)", xalign=0), 0, len(sliders)+1, 1, 1)
-        grid.attach(width, 1, len(sliders)+1, 1, 1)
-        restore = Gtk.Button(label="Reset to defaults")
-        restore.connect("clicked", lambda _: preset.set_active_id("Balanced"))
-        restore.connect("clicked", lambda _: width.set_value(100))
-        grid.attach(restore, 1, len(sliders)+2, 1, 1)
-        preset.connect("changed", use_preset)
-        self.effect_menus.append((menu, grid, preset, restore, tal))
-        self.vocoder_panels.append((mix_label, sliders))
-        grid.show_all()
-        apply()
-        return menu
 
     def set_song_assignment(self, lane, field, value):
         self.strips[lane][field] = value
@@ -1186,30 +1058,9 @@ class Desk:
             vst_harmony = s["voice"] == CHORD_TUNE
             harmony = vst_harmony or s["voice"] == TUNELET
             tal = s["voice"] == TAL_VOCODER
-            mix_label, sliders = self.vocoder_panels[i]
-            menu, grid, preset, restore, tal_menu = self.effect_menus[i]
-            tal_menu.set_visible(tal)
-            group = "Harmony" if harmony else "Carrier" if tal else "Vocoder"
-            menu.set_label(group + "…")
-            menu.set_tooltip_text("Adjust the scored singing harmony" if harmony else "Adjust the vocoder and its scored carrier")
-            menu.get_accessible().set_name(f"{MIC_NAMES[i]} {group.lower()} settings")
-            mix_name = "Harmony level" if harmony else "Wet level" if tal else "Dry / Wet"
-            mix_label.set_text(mix_name)
-            sliders[0].get_accessible().set_name(f"{MIC_NAMES[i]} {group.lower()} {mix_name.lower()}")
-            sliders[0].set_tooltip_text("Level of the tuned voices." if harmony else
-                                        "Level of the fully vocoded voice. Zero mutes it." if tal else VOCODER_HINTS[0])
-            grid.get_child_at(0, 2).set_text("Vocal register" if harmony else "Synth register")
-            for widget in (grid.get_child_at(0, 0), preset, restore,
-                           *(grid.get_child_at(col, row) for row in (4, 5, 6, 7, 8) for col in (0, 1))):
-                hide = harmony or (tal and widget not in (grid.get_child_at(0, 5), sliders[5]))
-                widget.set_no_show_all(hide)
-                widget.set_visible(not hide)
-            for index in (1, 2, 3, 4):
-                sliders[index].set_sensitive(not (harmony or tal))
-            # The Chorale MIDI mode follows exact note targets with its own transitions.
-            for widget in (sliders[7], grid.get_child_at(0, 3)):
-                widget.set_no_show_all(vst_harmony)
-                widget.set_visible(not vst_harmony)
+            self.tal_panels[i].set_visible(tal)
+            self.vocoder_panels[i].show_for(inline=s["voice"] in (1, VOCODER_HOLD, TAL_VOCODER),
+                                             harmony=harmony, tal=tal, glide=not vst_harmony)
             if harmony:
                 engine = "Chorale VST3" if vst_harmony else "Tunelet"
                 hint = (f"{engine} · singer harmonized to notes from {carrier}" if has_carrier
@@ -1217,10 +1068,10 @@ class Desk:
                 if vst_harmony and not self.audio.call("chorale_ready", i):
                     hint = "Chorale unavailable. Run scripts/install-chorale-vst3 and reopen the desk."
             if tal:
-                hint = (f"TAL-Vocoder-2 · fully wet · notes from {carrier}" if has_carrier
-                        else "TAL Vocoder is silent until a score is assigned.")
+                hint = (f"TAL-Vocoder-2 · notes from {carrier}" if has_carrier
+                        else "The TAL wet return is silent until a score is assigned.")
                 if not self.audio.call("tal_ready", i):
-                    hint = "TAL Vocoder is silent. Run scripts/install-tal-vst3 and reopen the desk."
+                    hint = "The TAL wet return is silent. Run scripts/install-tal-vst3 and reopen the desk."
             fx.set_tooltip_text(hint)
 
     def master(self, *_):

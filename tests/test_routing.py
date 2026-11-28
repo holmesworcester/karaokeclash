@@ -138,7 +138,7 @@ class MicControls(unittest.TestCase):
         desk.pair_controls = []
         desk.cells = []
         desk.vocoder_panels = []
-        desk.effect_menus = []
+        desk.tal_panels = []
         desk.loop_controls = {}
         desk.loop_style = Gtk.CssProvider()
         desk.source_buttons = {}
