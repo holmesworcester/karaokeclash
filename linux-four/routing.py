@@ -1,4 +1,6 @@
 """Song assignment controls shared by the transport and the mic strips."""
+import re
+
 import cairo
 import gi
 
@@ -9,6 +11,10 @@ from gi.repository import Gdk, Gtk, Pango
 from playlist import Playlist, searchable
 
 SONG = Gtk.TargetEntry.new("application/x-karaoke-song", Gtk.TargetFlags.SAME_APP, 0)
+
+# Match a complete edition suffix so official subtitles and named mixes survive.
+_EDITION = r"(?:original(?: studio)?(?: album)?|studio(?: album)?|album) (?:version|recording)"
+_EDITION_SUFFIX = re.compile(rf"(?:\s*\({_EDITION}\)|\s*\[{_EDITION}\]|\s+[-–—]\s+{_EDITION})\s*$", re.I)
 
 
 class SongLibrary(Playlist):
@@ -80,17 +86,14 @@ class SongLibrary(Playlist):
         entries = []
         for key in loops:
             song = songs[key]
-            entries.append((key, song["title"], song.get("artist", ""), ""))
+            title = _EDITION_SUFFIX.sub("", song["title"]) or song["title"]
+            entries.append((key, title, song.get("artist", ""), ""))
         self.refill(sorted(entries, key=lambda row: (row[1].casefold(), row[2].casefold())))
         for key in loops:
             request = songs[key].get("importRequest")
             if request:
                 row = self.items[key]
                 prompt = request["notes"]
-                if prompt:
-                    label = Gtk.Label(label=prompt, xalign=0, max_width_chars=24, ellipsize=Pango.EllipsizeMode.END)
-                    row.get_child().get_child().add(label)
-                    label.show()
                 row.terms += " " + searchable(request["source"] + " " + prompt)
                 row.set_tooltip_text("\n".join(filter(None, (row.get_accessible().get_name(), request["source"], prompt))))
         self.rows.invalidate_filter()

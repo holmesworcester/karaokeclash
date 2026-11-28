@@ -54,6 +54,28 @@ class MicControls(unittest.TestCase):
             library.search.set_text("twin recordings " + mode)
             self.assertEqual(visible(), set())
 
+    def test_library_shows_titles_and_artists_and_keeps_edition_notes_searchable(self):
+        albums = "Original studio album version from Under Construction."
+        songs = {
+            "work/full": dict(title="Work It", artist="Missy Elliott",
+                              importRequest=dict(source="Missy Elliott - Work It", notes=albums)),
+            "blue/full": dict(title="Blue (Da Ba Dee) [Original Studio Version]", artist="Eiffel 65"),
+            "tipsy/full": dict(title="Tipsy (Club Mix) – Album Version", artist="J-Kwon"),
+        }
+        library = SongLibrary()
+        self.addCleanup(library.destroy)
+        library.show_catalog(songs, songs)
+        for key, expected in (("work/full", ["Work It", "Missy Elliott"]),
+                              ("blue/full", ["Blue (Da Ba Dee)", "Eiffel 65"]),
+                              ("tipsy/full", ["Tipsy (Club Mix)", "J-Kwon"])):
+            row = library.items[key]
+            labels = [w.get_text() for w in descendants(row) if isinstance(w, Gtk.Label)]
+            self.assertEqual(labels, expected)
+            self.assertEqual(row.get_accessible().get_name(), " · ".join(expected))
+        self.assertIn(albums, library.items["work/full"].get_tooltip_text())
+        library.search.set_text("under construction")
+        self.assertEqual([k for k, row in library.items.items() if row.get_child_visible()], ["work/full"])
+
     @unittest.skipUnless((Path(__file__).resolve().parents[1]/"linux-four"/"loop-presets.json").is_file(),
                          "requires the installed recording chart")
     def test_get_low_has_one_recording_and_three_standard_loop_choices(self):
